@@ -1,0 +1,30 @@
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi==0.115.12
+uvicorn==0.34.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+motor==3.6.0          # async MongoDB driver
+beanie==1.27.0        # async ODM built on motor
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+# bcrypt is called directly (passlib 1.7.4 is incompatible with bcrypt ≥ 4.0).
+bcrypt==5.0.0
+python-jose[cryptography]==3.3.0
+
+# ── HTTP / file handling ──────────────────────────────────────────────────────
+httpx==0.28.1
+certifi>=2024.2.2     # CA bundle used by httpx; pinned explicitly for SSL handling
+python-multipart==0.0.20
+
+# ── AI services ───────────────────────────────────────────────────────────────
+groq==0.13.0
+
+# ── Config ────────────────────────────────────────────────────────────────────
+python-dotenv==1.1.0
+pydantic[email]==2.12.5
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest==8.3.5
+pytest-asyncio==0.26.0
+hypothesis==6.131.15
+anyio==4.9.0
