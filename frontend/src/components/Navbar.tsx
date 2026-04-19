@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -41,7 +41,7 @@ export default function Navbar() {
             Login
           </button>
           <motion.button
-            onClick={openPopup}
+            onClick={() => openPopup()}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             className="bg-[#0EA5E9] hover:bg-[#38BDF8] text-white px-6 py-2.5 rounded-xl font-bold transition shadow-[0_0_15px_rgba(14,165,233,0.5)]"
@@ -78,7 +78,7 @@ export default function Navbar() {
               <button onClick={() => { setIsOpen(false); openPopup('login'); }} className="block w-full text-left text-slate-400 hover:text-white font-medium">
                 Login
               </button>
-              <button onClick={openPopup} className="w-full bg-[#0EA5E9] text-white py-3 rounded-xl font-bold">
+              <button onClick={() => openPopup()} className="w-full bg-[#0EA5E9] text-white py-3 rounded-xl font-bold">
                 Get Started
               </button>
             </div>

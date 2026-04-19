@@ -88,6 +88,35 @@ export interface TaskUpdatePayload {
   priority?: TaskItem['priority'];
 }
 
+export interface DetectedTask {
+  id: string;
+  title: string;
+  assignee?: string;
+  deadline?: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high';
+  status: 'pending' | 'in-progress' | 'done';
+  confidence: number;
+  source_text: string;
+  user_id: string;
+  meeting_id?: string;
+  created_at: string;
+  updated_at: string;
+  tags?: string[];
+  approved?: boolean;
+  dismissed?: boolean;
+}
+
+export interface DetectedTaskUpdate {
+  status?: string;
+  assignee?: string;
+  deadline?: string;
+  priority?: string;
+  tags?: string[];
+  approved?: boolean;
+  dismissed?: boolean;
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export const authApi = {
@@ -169,4 +198,41 @@ export const aiApi = {
     }
     return data as { transcription: string };
   },
+};
+
+// ── Detected Tasks ────────────────────────────────────────────────────────────
+
+export const detectedTasksApi = {
+  list: (params?: { status?: string; assignee?: string; limit?: number }) => {
+    const qs = params
+      ? '?' + new URLSearchParams(
+          Object.fromEntries(
+            Object.entries(params).filter(([, v]) => v !== undefined && v !== ''),
+          ) as Record<string, string>,
+        ).toString()
+      : '';
+    return request<DetectedTask[]>('GET', `/detected-tasks${qs}`);
+  },
+
+  get: (taskId: string) =>
+    request<DetectedTask>('GET', `/detected-tasks/${taskId}`),
+
+  update: (taskId: string, payload: DetectedTaskUpdate) =>
+    request<DetectedTask>('PATCH', `/detected-tasks/${taskId}`, payload),
+
+  delete: (taskId: string) =>
+    request<{ message: string }>('DELETE', `/detected-tasks/${taskId}`),
+
+  detect: (text: string, context?: string[], meetingId?: string) =>
+    request<DetectedTask[]>('POST', '/detected-tasks/detect', {
+      text,
+      context,
+      meeting_id: meetingId,
+    }),
+
+  getParticipants: () =>
+    request<{ participants: string[] }>('GET', '/detected-tasks/participants/list'),
+
+  addParticipant: (name: string) =>
+    request<{ message: string }>('POST', `/detected-tasks/participants/add?name=${encodeURIComponent(name)}`),
 };

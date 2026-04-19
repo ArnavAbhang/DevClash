@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { usePopup } from '../context/PopupContext';
 import { Check } from 'lucide-react';
 
@@ -105,7 +105,7 @@ export default function Pricing() {
               </div>
 
               <button
-                onClick={openPopup}
+                onClick={() => openPopup()}
                 className={`w-full py-3 rounded-xl font-bold transition-all ${
                   plan.highlighted
                     ? 'bg-[#0EA5E9] hover:bg-[#38BDF8] text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]'

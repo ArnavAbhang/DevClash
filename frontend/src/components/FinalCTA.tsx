@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { ArrowRight, Calendar } from 'lucide-react';
 import { usePopup } from '../context/PopupContext';
 
@@ -32,7 +32,7 @@ export default function FinalCTA() {
 
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4 relative z-10">
             <motion.button
-              onClick={openPopup}
+              onClick={() => openPopup()}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               className="w-full sm:w-auto bg-[#0EA5E9] hover:bg-[#38BDF8] text-white px-8 py-4 rounded-xl font-bold flex items-center justify-center space-x-2 transition shadow-[0_0_20px_rgba(14,165,233,0.4)]"
@@ -41,7 +41,7 @@ export default function FinalCTA() {
               <ArrowRight size={20} />
             </motion.button>
             <motion.button
-              onClick={openPopup}
+              onClick={() => openPopup()}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               className="w-full sm:w-auto bg-white/10 hover:bg-white/20 text-white px-8 py-4 rounded-xl font-bold flex items-center justify-center space-x-2 transition border border-white/10"

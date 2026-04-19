@@ -11,6 +11,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from core.config import settings
 from models.task import Task
 from models.user import User
+from models.detected_task import DetectedTask
 
 
 async def connect_db() -> None:
@@ -18,7 +19,7 @@ async def connect_db() -> None:
     client = AsyncIOMotorClient(settings.mongo_uri)
     await init_beanie(
         database=client[settings.mongo_db_name],
-        document_models=[User, Task],
+        document_models=[User, Task, DetectedTask],
     )
 
 

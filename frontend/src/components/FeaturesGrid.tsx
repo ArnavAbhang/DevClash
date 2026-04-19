@@ -1,5 +1,5 @@
-import { motion } from 'motion/react';
-import { Mic, FileText, CheckSquare, Camera, BrainCircuit, CalendarClock, Trello, MessageSquareText } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Mic, FileText, CheckSquare, Camera, BrainCircuit, CalendarClock, Grid3X3, MessageSquareText } from 'lucide-react';
 
 const features = [
   {
@@ -33,7 +33,7 @@ const features = [
     desc: "Seamlessly integrates with Google and Outlook calendars."
   },
   {
-    icon: Trello,
+    icon: Grid3X3,
     title: "Jira / Notion Integration",
     desc: "Push updates directly to your favorite project management tools."
   },

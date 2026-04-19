@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { TrendingUp, User, Zap } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 

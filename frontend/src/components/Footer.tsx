@@ -1,4 +1,4 @@
-import { Instagram, Twitter, Linkedin, Github } from 'lucide-react';
+import { Globe, X, ExternalLink, Code } from 'lucide-react';
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -21,10 +21,10 @@ export default function Footer() {
               Empowering modern teams to extract maximum value from every conversation through state-of-the-art AI intelligence.
             </p>
             <div className="flex space-x-4">
-              <a href="#" className="text-slate-400 hover:text-[#38BDF8] transition"><Twitter size={20} /></a>
-              <a href="#" className="text-slate-400 hover:text-[#38BDF8] transition"><Linkedin size={20} /></a>
-              <a href="#" className="text-slate-400 hover:text-[#38BDF8] transition"><Instagram size={20} /></a>
-              <a href="#" className="text-slate-400 hover:text-[#38BDF8] transition"><Github size={20} /></a>
+              <a href="#" className="text-slate-400 hover:text-[#38BDF8] transition"><X size={20} /></a>
+              <a href="#" className="text-slate-400 hover:text-[#38BDF8] transition"><ExternalLink size={20} /></a>
+              <a href="#" className="text-slate-400 hover:text-[#38BDF8] transition"><Globe size={20} /></a>
+              <a href="#" className="text-slate-400 hover:text-[#38BDF8] transition"><Code size={20} /></a>
             </div>
           </div>
 

@@ -28,6 +28,8 @@ from core.database import close_db, connect_db
 from routers.ai import router as ai_router
 from routers.auth import router as auth_router
 from routers.tasks import router as tasks_router
+from routers.detected_tasks import router as detected_tasks_router
+from routers.transcript_quality import router as transcript_quality_router
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +81,8 @@ if settings.environment == "development":
 app.include_router(auth_router)
 app.include_router(tasks_router)
 app.include_router(ai_router)
+app.include_router(detected_tasks_router)
+app.include_router(transcript_quality_router)
 
 
 @app.get("/api/health", tags=["health"])

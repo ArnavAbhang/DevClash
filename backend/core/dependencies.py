@@ -10,6 +10,7 @@ and injects the User document into the route handler.
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from beanie import PydanticObjectId
 
 from models.user import User
 from services.jwt import decode_access_token
@@ -28,7 +29,15 @@ async def get_current_user(
         HTTPException 401 — user no longer exists in the database
     """
     token = credentials.credentials
-    user_id = decode_access_token(token)   # raises 401 on bad token
+    user_id_str = decode_access_token(token)   # raises 401 on bad token
+    
+    try:
+        user_id = PydanticObjectId(user_id_str)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user ID in token",
+        )
 
     user = await User.get(user_id)
     if not user:

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, ReactNode, FormEvent } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, CheckCircle, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -83,19 +83,33 @@ export function PopupModal() {
     if (!form.checkValidity()) { form.reportValidity(); return; }
 
     const formData = new FormData(form);
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
+    const email = String(formData.get('email') ?? '').trim();
+    const password = String(formData.get('password') ?? '');
+
+    if (!email || !password) {
+      setError('Please enter both email and password.');
+      return;
+    }
 
     setIsLoading(true);
     try {
       if (type === 'login') {
         const result = await apiLogin(email, password);
+        if (!result?.data?.token || !result?.data?.user) {
+          throw new Error('Login response was invalid. Please try again.');
+        }
+
         localStorage.setItem('token', result.data.token);
         localStorage.setItem('user', JSON.stringify(result.data.user));
         closePopup();
         navigate('/dashboard');
       } else {
-        const name = formData.get('name') as string;
+        const name = String(formData.get('name') ?? '').trim();
+        if (!name) {
+          setError('Please enter your name.');
+          return;
+        }
+
         await apiRegister(name, email, password);
         setIsSubmitted(true);
         setTimeout(() => {
@@ -104,7 +118,7 @@ export function PopupModal() {
         }, 3000);
       }
     } catch (err: any) {
-      setError(err.message ?? 'Something went wrong. Please try again.');
+      setError(err?.message ?? 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
     }

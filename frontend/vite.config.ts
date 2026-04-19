@@ -20,6 +20,12 @@ export default defineConfig(({ mode }) => {
       },
     },
 
+    // 🔥 FIX: Optimize framer-motion for Vite
+    optimizeDeps: {
+      include: ['framer-motion'],
+      exclude: ['motion'],
+    },
+
     build: {
       // Output the production build directly into the FastAPI static folder.
       // Running `npm run build` from frontend/ produces:
@@ -27,6 +33,13 @@ export default defineConfig(({ mode }) => {
       //   ../backend/static/assets/...
       outDir: '../backend/static',
       emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'framer-motion': ['framer-motion'],
+          },
+        },
+      },
     },
 
     server: {

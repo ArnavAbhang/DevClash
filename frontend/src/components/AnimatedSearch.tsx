@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Search, X, Clock, FileText, CheckSquare } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';

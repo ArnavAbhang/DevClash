@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, AlertCircle, Info, X, Zap, Brain } from 'lucide-react';
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 

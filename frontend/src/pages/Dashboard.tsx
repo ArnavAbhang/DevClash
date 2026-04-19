@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Calendar, CheckSquare, FileText,
