@@ -67,6 +67,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Public constants
@@ -108,7 +109,7 @@ _FFMPEG_ARGS = [
 _FFMPEG_QUIET = ["-loglevel", "error", "-nostats"]
 
 # Cache the resolved path so we only search once per process lifetime.
-_resolved_ffmpeg_path: str | None = None
+_resolved_ffmpeg_path: Optional[str] = None
 
 
 def _read_registry_user_path() -> list[str]:
@@ -137,7 +138,7 @@ def _read_registry_user_path() -> list[str]:
         return []
 
 
-def _which_in_dirs(name: str, dirs: list[str]) -> str | None:
+def _which_in_dirs(name: str, dirs: list[str]) -> Optional[str]:
     """Search *dirs* for an executable named *name* (with .exe on Windows)."""
     exts = [".exe", ".cmd", ".bat", ""] if sys.platform == "win32" else [""]
     for directory in dirs:

@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+from typing import Union
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -16,7 +17,7 @@ from services import asr_service  # noqa: E402
 # Helper: build a fake httpx.Response
 # ---------------------------------------------------------------------------
 
-def _make_response(status_code: int, body: dict | str) -> MagicMock:
+def _make_response(status_code: int, body: Union[dict, str]) -> MagicMock:
     """Return a MagicMock that looks like an httpx.Response."""
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code

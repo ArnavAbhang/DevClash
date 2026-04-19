@@ -227,17 +227,23 @@ export default function Dashboard() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [recordedAudioName, setRecordedAudioName] = useState<string>('');
+  const [voiceDetected, setVoiceDetected] = useState(false);
   // AI summary state
   const [aiSummary, setAiSummary] = useState<string>('');
   const [summaryLoading, setSummaryLoading] = useState(false);
 
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const mediaRecorderAudioRef = useRef<MediaRecorder | null>(null);
-  const audioStreamRef = useRef<MediaStream | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const transcriptionRecorderRef = useRef<MediaRecorder | null>(null);
+  const transcriptionStreamRef = useRef<MediaStream | null>(null);
   const audioTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioStartTimeRef = useRef<number>(0);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const transcriptionQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const transcriptionChunksRef = useRef<Blob[]>([]);
+  const transcriptionTextRef = useRef<string>('');
+  const isTranscribingRef = useRef<boolean>(false);
+  const voiceActivityRef = useRef<boolean>(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -296,14 +302,26 @@ export default function Dashboard() {
   // ── Screen Record ──
   const startRecording = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
+      // Get screen stream
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
-        audio: true
+        audio: true // Capture system audio if available
       });
-      streamRef.current = stream;
+
+      // Get mic stream
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Combine streams
+      const combinedStream = new MediaStream([
+        ...screenStream.getVideoTracks(),
+        ...screenStream.getAudioTracks(),
+        ...micStream.getAudioTracks()
+      ]);
+
+      streamRef.current = combinedStream;
       chunksRef.current = [];
 
-      const mediaRecorder = new MediaRecorder(stream, {
+      const mediaRecorder = new MediaRecorder(combinedStream, {
         mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm'
       });
 
@@ -324,7 +342,7 @@ export default function Dashboard() {
         toast.success('Recording saved successfully!');
       };
 
-      stream.getVideoTracks()[0].onended = () => stopRecording();
+      screenStream.getVideoTracks()[0].onended = () => stopRecording();
 
       mediaRecorder.start(1000);
       mediaRecorderRef.current = mediaRecorder;
@@ -336,8 +354,9 @@ export default function Dashboard() {
       }, 1000);
     } catch (err) {
       console.error('Screen recording failed:', err);
+      toast.error('Failed to start screen recording. Please check permissions.');
     }
-  }, []);
+  }, [toast]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
@@ -502,6 +521,40 @@ export default function Dashboard() {
     });
   };
 
+  const transcribeRecording = useCallback(async (recording: Recording) => {
+    try {
+      // Fetch the blob from URL
+      const response = await fetch(recording.url);
+      const blob = await response.blob();
+
+      // When recording a screen capture, the blob may be video/webm.
+      // Convert it to an audio-typed blob so the backend ASR can accept it.
+      const audioBlob = new Blob([blob], { type: 'audio/webm' });
+
+      setTranscriptStatus('processing');
+      const result = await aiApi.transcribe(audioBlob);
+      const transcription = result.transcription;
+
+      if (transcription.trim()) {
+        const line: TranscriptLine = {
+          id: String(Date.now()),
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          speaker: 'Recording',
+          text: transcription,
+          confidence: 0.95,
+        };
+        setTranscriptLines(prev => [...prev, line]);
+        toast.success('Recording transcribed successfully!');
+      } else {
+        toast.info('No speech detected in the recording.');
+      }
+    } catch (err: any) {
+      toast.error(`Transcription failed: ${err.message}`);
+    } finally {
+      setTranscriptStatus('idle');
+    }
+  }, [toast]);
+
   const deleteScreenshot = (id: number) => {
     setScreenshots(prev => {
       const s = prev.find(x => x.id === id);
@@ -574,110 +627,249 @@ export default function Dashboard() {
   };
 
   // ── Transcript Functions ──
-  const startTranscription = useCallback(async () => {
+  const createMixedAudioStream = useCallback(async () => {
+    const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) {
+      throw new Error('AudioContext is not supported in this browser.');
+    }
+
+    const displayStream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+    const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    const audioContext = new AudioContextClass();
+    await audioContext.resume(); // Ensure AudioContext is running
+    audioContextRef.current = audioContext;
+    const destination = audioContext.createMediaStreamDestination();
+
+    const displayAudioTracks = displayStream.getAudioTracks();
+    if (displayAudioTracks.length > 0) {
+      const displaySource = audioContext.createMediaStreamSource(new MediaStream(displayAudioTracks));
+      const displayGain = audioContext.createGain();
+      displayGain.gain.value = 1.5; // Boost display audio volume
+      displaySource.connect(displayGain);
+      displayGain.connect(destination);
+    }
+
+    const micAudioTracks = micStream.getAudioTracks();
+    if (micAudioTracks.length > 0) {
+      const micSource = audioContext.createMediaStreamSource(new MediaStream(micAudioTracks));
+      const micGain = audioContext.createGain();
+      micGain.gain.value = 1;
+      micSource.connect(micGain);
+      micGain.connect(destination);
+    }
+
+    return { mixedStream: destination.stream, displayStream, micStream };
+  }, []);
+
+  const processAudioChunk = useCallback(async (chunk: Blob) => {
+    if (!isTranscribingRef.current) return;
+    setTranscriptStatus('processing');
+    console.log(`[DEBUG] Processing chunk, size: ${chunk.size} bytes`);
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStreamRef.current = stream;
-      mediaRecorderAudioRef.current = new MediaRecorder(stream);
-      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
-      if (AudioContextClass) {
-        audioContextRef.current = new AudioContextClass();
+      // Pass the full conversation history to detect repeated phrases
+      const conversationHistory = transcriptionTextRef.current;
+      const result = await aiApi.transcribe(chunk, conversationHistory);
+      console.log('[DEBUG] API response:', result);
+      
+      const transcription = result.transcription.trim();
+      if (!transcription) {
+        console.log('[DEBUG] Empty transcription (filtered or no speech)');
+        return;
       }
 
-      audioChunksRef.current = [];
-      mediaRecorderAudioRef.current.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
-      };
+      console.log(`[DEBUG] New transcription: '${transcription}'`);
+      
+      // Simple append — backend already filtered out repetitions
+      transcriptionTextRef.current = transcriptionTextRef.current
+        ? `${transcriptionTextRef.current} ${transcription}`
+        : transcription;
 
+      const line: TranscriptLine = {
+        id: String(Date.now()),
+        timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        speaker: 'Live',
+        text: transcription,
+        confidence: 0.95,
+      };
+      setTranscriptLines(prev => [...prev, line]);
+    } catch (err: any) {
+      console.error('[ERROR] Realtime transcription failed:', err);
+      toast.error(`Realtime transcription failed: ${err.message}`);
+    } finally {
+      setTranscriptStatus(isTranscribingRef.current ? 'listening' : 'idle');
+    }
+  }, [toast]);
+
+  const generateSummary = useCallback(async () => {
+    if (!transcriptionTextRef.current.trim()) return;
+    setSummaryLoading(true);
+    try {
+      const summaryResult = await aiApi.summarize(transcriptionTextRef.current);
+      setAiSummary(summaryResult.summary);
+      toast.success('Live transcript summarized successfully.');
+    } catch (err: any) {
+      toast.error(`Summary generation failed: ${err.message}`);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [toast]);
+
+  const startTranscription = useCallback(async () => {
+    console.log('[DEBUG] Starting transcription...');
+    try {
+      setTranscriptLines([]);
+      transcriptionTextRef.current = '';
       setIsTranscribing(true);
+      isTranscribingRef.current = true;
       setTranscriptStatus('listening');
+      setVoiceDetected(false);
       audioStartTimeRef.current = Date.now();
       setElapsedAudioTime(0);
-      setTranscriptLines([]);
-      setAudioUrl(null);
+      setAiSummary('');
 
-      mediaRecorderAudioRef.current.start(1000);
-
-      // Timer for elapsed time
       audioTimerRef.current = setInterval(() => {
         setElapsedAudioTime(Math.floor((Date.now() - audioStartTimeRef.current) / 1000));
       }, 1000);
 
-      // TODO: Send audio chunks to backend via WebSocket
-      // mediaRecorderAudioRef.current.ondataavailable = (e) => {
-      //   ws.send(e.data);
-      // };
+      console.log('[DEBUG] Requesting mic access...');
+      const micStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }
+      });
+      console.log('[DEBUG] Mic access granted');
 
-      toast.success('Transcription started. Press the mic button to stop.');
-    } catch (err) {
-      console.error('Failed to start transcription:', err);
-      toast.error('Failed to access microphone. Please check permissions.');
-    }
-  }, [toast]);
-
-  const stopTranscription = useCallback(() => {
-    if (mediaRecorderAudioRef.current && mediaRecorderAudioRef.current.state !== 'inactive') {
-      mediaRecorderAudioRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const url = URL.createObjectURL(audioBlob);
-        const now = new Date();
-        const audioName = `Audio_${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}_${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
-        setAudioUrl(url);
-        setRecordedAudioName(audioName);
-
-        // ── Send to /transcribe ──────────────────────────────────────────────
-        setTranscriptStatus('processing');
-        try {
-          const result = await aiApi.transcribe(audioBlob);
-          const transcription = result.transcription;
-
-          // Add the full transcription as a single line
-          if (transcription.trim()) {
-            const line: TranscriptLine = {
-              id: String(Date.now()),
-              timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-              speaker: 'Speaker 1',
-              text: transcription,
-              confidence: 0.95,
-            };
-            setTranscriptLines(prev => [...prev, line]);
-
-            // ── Send to /summarize ─────────────────────────────────────────
-            setSummaryLoading(true);
-            try {
-              const summaryResult = await aiApi.summarize(transcription);
-              setAiSummary(summaryResult.summary);
-              toast.success('Transcript and summary ready!');
-            } catch (sumErr: any) {
-              toast.error(`Summary failed: ${sumErr.message}`);
-            } finally {
-              setSummaryLoading(false);
-            }
-          } else {
-            toast.info('No speech detected in the recording.');
+      // Set up voice activity detection
+      const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        const audioContext = new AudioContextClass();
+        await audioContext.resume();
+        audioContextRef.current = audioContext;
+        
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.8;
+        analyserRef.current = analyser;
+        
+        const source = audioContext.createMediaStreamSource(micStream);
+        source.connect(analyser);
+        
+        // Voice activity detection loop
+        const detectVoice = () => {
+          if (!isTranscribingRef.current) return;
+          
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          analyser.getByteFrequencyData(dataArray);
+          
+          // Calculate average volume
+          const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+          const isVoiceActive = average > 25; // Threshold for voice detection
+          
+          if (isVoiceActive !== voiceActivityRef.current) {
+            voiceActivityRef.current = isVoiceActive;
+            setVoiceDetected(isVoiceActive);
           }
-        } catch (err: any) {
-          toast.error(`Transcription failed: ${err.message}`);
-        } finally {
-          setTranscriptStatus('idle');
+          
+          requestAnimationFrame(detectVoice);
+        };
+        detectVoice();
+      }
+
+      transcriptionStreamRef.current = micStream;
+      transcriptionChunksRef.current = [];
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+      transcriptionRecorderRef.current = new MediaRecorder(micStream, { mimeType });
+
+      console.log('[DEBUG] MediaRecorder created, mimeType:', transcriptionRecorderRef.current.mimeType);
+
+      // WebM streams require the first chunk (which contains the EBML header)
+      // to be prepended to every subsequent chunk so each blob is a valid
+      // self-contained WebM file that Groq Whisper can decode.
+      let headerChunk: Blob | null = null;
+
+      transcriptionRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          console.log(`[DEBUG] Chunk received, size: ${event.data.size} bytes`);
+          transcriptionChunksRef.current.push(event.data);
+
+          if (!headerChunk) {
+            // First chunk always contains the WebM EBML header — save it.
+            headerChunk = event.data;
+            // Don't send the header-only chunk alone; wait for the next one.
+            return;
+          }
+
+          // Only process chunks if there was recent voice activity
+          if (voiceActivityRef.current || event.data.size > 10000) {
+            // Prepend the header so every chunk is a valid WebM container.
+            const fullChunk = new Blob([headerChunk, event.data], { type: 'audio/webm' });
+            transcriptionQueueRef.current = transcriptionQueueRef.current.then(() => processAudioChunk(fullChunk));
+          } else {
+            console.log('[DEBUG] Skipping chunk - no voice activity detected');
+          }
         }
       };
-      mediaRecorderAudioRef.current.stop();
-    }
 
-    if (audioStreamRef.current) {
-      audioStreamRef.current.getTracks().forEach(t => t.stop());
-      audioStreamRef.current = null;
+      transcriptionRecorderRef.current.onstop = async () => {
+        console.log('[DEBUG] MediaRecorder stopped');
+        // Send all accumulated chunks as one final blob for any remaining audio.
+        if (transcriptionChunksRef.current.length > 0) {
+          const finalChunk = new Blob(transcriptionChunksRef.current, { type: 'audio/webm' });
+          transcriptionQueueRef.current = transcriptionQueueRef.current.then(() => processAudioChunk(finalChunk));
+        }
+        await transcriptionQueueRef.current;
+        await generateSummary();
+      };
+
+      transcriptionRecorderRef.current.start(4000); // 4-second chunks for better accuracy
+      console.log('[DEBUG] MediaRecorder started with 4s chunks');
+
+      toast.success('Live transcription started.');
+
+      micStream.getAudioTracks().forEach(track => track.onended = () => stopTranscription());
+    } catch (err: any) {
+      console.error('[ERROR] Failed to start transcription:', err);
+      toast.error(`Failed to start transcription: ${err.message}`);
+      if (audioTimerRef.current) {
+        clearInterval(audioTimerRef.current);
+        audioTimerRef.current = null;
+      }
+      setIsTranscribing(false);
+      setTranscriptStatus('idle');
+      setVoiceDetected(false);
+      isTranscribingRef.current = false;
+    }
+  }, [generateSummary, processAudioChunk, toast]);
+
+  const stopTranscription = useCallback(async () => {
+    isTranscribingRef.current = false;
+    voiceActivityRef.current = false;
+    if (transcriptionRecorderRef.current && transcriptionRecorderRef.current.state !== 'inactive') {
+      transcriptionRecorderRef.current.stop();
     }
     if (audioTimerRef.current) {
       clearInterval(audioTimerRef.current);
       audioTimerRef.current = null;
     }
-
+    if (transcriptionStreamRef.current) {
+      transcriptionStreamRef.current.getTracks().forEach(t => t.stop());
+      transcriptionStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      await audioContextRef.current.close().catch(() => null);
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
     setIsTranscribing(false);
-  }, [toast]);
+    setTranscriptStatus('idle');
+    setVoiceDetected(false);
+  }, []);
 
   const copyTranscript = useCallback(() => {
     if (transcriptLines.length === 0) {
@@ -888,7 +1080,7 @@ export default function Dashboard() {
                       Share Your Meeting Screen
                     </h2>
                     <p className="text-slate-400 leading-relaxed max-w-lg">
-                      Share your Google Meet or Zoom window and let MeetNova AI transcribe conversations, extract action items, and generate summaries — all in real time.
+                      Share your Google Meet or Zoom window with system audio and microphone input, then let MeetNova AI transcribe meetings, action items, and summaries in real time.
                     </p>
 
                     <div className="flex flex-wrap gap-3 pt-2">
@@ -900,7 +1092,7 @@ export default function Dashboard() {
                           className="flex items-center space-x-3 bg-gradient-to-r from-[#0EA5E9] to-[#22D3EE] text-white px-8 py-4 rounded-2xl font-bold text-lg shadow-xl shadow-cyan-500/30 transition"
                         >
                           <ScreenShare size={24} />
-                          <span>Start Screen Share</span>
+                          <span>Start Screen + Audio</span>
                         </motion.button>
                       ) : (
                         <motion.button
@@ -1009,6 +1201,7 @@ export default function Dashboard() {
                               </div>
                             </div>
                             <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition">
+                              <button onClick={() => transcribeRecording(rec)} className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-blue-400 transition"><Mic size={16} /></button>
                               <button onClick={() => downloadFile(rec.url, rec.name, 'webm')} className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-emerald-400 transition"><Download size={16} /></button>
                               <button onClick={() => deleteRecording(rec.id)} className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-red-400 transition"><Trash2 size={16} /></button>
                             </div>
@@ -1233,25 +1426,44 @@ export default function Dashboard() {
                       onClick={isTranscribing ? stopTranscription : startTranscription}
                       className={`relative w-32 h-32 rounded-full flex items-center justify-center text-white font-bold transition-all shadow-2xl ${
                         isTranscribing
-                          ? 'bg-gradient-to-br from-red-500 to-rose-600 shadow-red-500/50 animate-pulse'
+                          ? 'bg-gradient-to-br from-red-500 to-rose-600 shadow-red-500/50'
                           : 'bg-gradient-to-br from-[#0EA5E9] to-[#22D3EE] shadow-cyan-500/50 hover:shadow-cyan-500/70'
                       }`}
                     >
                       {isTranscribing ? <MicOff size={48} /> : <Mic size={48} />}
                       {isTranscribing && (
                         <motion.div
-                          animate={{ scale: [1, 1.3, 1] }}
-                          transition={{ duration: 2, repeat: Infinity }}
-                          className="absolute inset-0 rounded-full border-2 border-red-400 opacity-50"
+                          animate={{ scale: voiceDetected ? [1, 1.4, 1] : [1, 1.1, 1] }}
+                          transition={{ duration: voiceDetected ? 0.8 : 2, repeat: Infinity }}
+                          className={`absolute inset-0 rounded-full border-2 opacity-50 ${
+                            voiceDetected ? 'border-green-400' : 'border-red-400'
+                          }`}
+                        />
+                      )}
+                      {isTranscribing && voiceDetected && (
+                        <motion.div
+                          animate={{ scale: [1, 1.6, 1] }}
+                          transition={{ duration: 0.6, repeat: Infinity }}
+                          className="absolute inset-0 rounded-full border-2 border-green-300 opacity-30"
                         />
                       )}
                     </motion.button>
-                    <div>
+                    <div className="text-center">
                       <p className={`text-sm font-semibold transition-colors ${isDark ? 'text-white' : 'text-slate-900'}`}>
                         {isTranscribing ? 'Stop' : 'Start Transcription'}
                       </p>
                       {isTranscribing && (
-                        <p className="text-xs text-slate-500 mt-1 font-mono">{formatTime(elapsedAudioTime)}</p>
+                        <div className="space-y-1">
+                          <p className="text-xs text-slate-500 font-mono">{formatTime(elapsedAudioTime)}</p>
+                          <div className={`flex items-center justify-center space-x-1 text-xs ${
+                            voiceDetected ? 'text-green-500' : 'text-slate-500'
+                          }`}>
+                            <div className={`w-1.5 h-1.5 rounded-full ${
+                              voiceDetected ? 'bg-green-500 animate-pulse' : 'bg-slate-400'
+                            }`} />
+                            <span>{voiceDetected ? 'Voice detected' : 'Listening...'}</span>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>

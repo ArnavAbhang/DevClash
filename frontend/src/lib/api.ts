@@ -125,7 +125,7 @@ export const aiApi = {
   summarize: (text: string) =>
     request<{ summary: string }>('POST', '/summarize', { text }),
 
-  transcribe: async (audioBlob: Blob): Promise<{ transcription: string }> => {
+  transcribe: async (audioBlob: Blob, conversationHistory?: string): Promise<{ transcription: string }> => {
     const token = getToken();
     const formData = new FormData();
 
@@ -140,6 +140,11 @@ export const aiApi = {
     };
     const filename = extMap[audioBlob.type] ?? 'recording.webm';
     formData.append('audio', audioBlob, filename);
+
+    // Pass full conversation history to detect repeated phrases
+    if (conversationHistory) {
+      formData.append('conversation_history', conversationHistory);
+    }
 
     // NOTE: Do NOT set Content-Type manually — the browser sets it with the
     // correct multipart boundary when you pass FormData.

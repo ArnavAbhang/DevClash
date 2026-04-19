@@ -65,6 +65,7 @@ import os
 import ssl
 import sys
 from pathlib import Path
+from typing import Optional, Union
 
 import certifi
 import httpx
@@ -74,8 +75,8 @@ load_dotenv()
 
 # Module-level constants — read once at import time.
 # Also validated at call time so monkeypatching works in tests.
-PARAKIT_API_KEY: str | None = os.getenv("PARAKIT_API_KEY")
-PARAKIT_API_ENDPOINT: str | None = os.getenv("PARAKIT_API_ENDPOINT")
+PARAKIT_API_KEY: Optional[str] = os.getenv("PARAKIT_API_KEY")
+PARAKIT_API_ENDPOINT: Optional[str] = os.getenv("PARAKIT_API_ENDPOINT")
 
 if not PARAKIT_API_KEY:
     raise ValueError("PARAKIT_API_KEY is not set")
@@ -85,7 +86,7 @@ if not PARAKIT_API_KEY:
 # SSL context builder
 # ---------------------------------------------------------------------------
 
-def _build_ssl_context() -> ssl.SSLContext | bool | str:
+def _build_ssl_context() -> Union[ssl.SSLContext, bool, str]:
     """
     Build the SSL verification argument for httpx.AsyncClient(verify=...).
 
@@ -165,17 +166,21 @@ async def transcribe(audio_bytes: bytes, mime_type: str) -> str:
     api_key = os.getenv("PARAKIT_API_KEY") or PARAKIT_API_KEY
     endpoint = os.getenv("PARAKIT_API_ENDPOINT") or PARAKIT_API_ENDPOINT
 
+    print(f"[DEBUG] ASR: api_key present: {bool(api_key)}, endpoint: {endpoint}")
+
     if not api_key:
         raise ValueError("PARAKIT_API_KEY is not set")
 
     headers = {"Authorization": f"Bearer {api_key}"}
+
+    print(f"[DEBUG] ASR: Sending request to {endpoint}, mime_type: {mime_type}, audio_size: {len(audio_bytes)} bytes")
 
     # _SSL_VERIFY is one of:
     #   True            → httpx uses certifi (public endpoints)
     #   ssl.SSLContext  → custom CA (self-signed cert or Windows store)
     #   str             → path to PEM bundle (not currently returned but
     #                     supported by httpx for forward compatibility)
-    async with httpx.AsyncClient(verify=_SSL_VERIFY) as client:
+    async with httpx.AsyncClient(verify=_SSL_VERIFY, timeout=30.0) as client:
         try:
             response = await client.post(
                 endpoint,
@@ -185,8 +190,10 @@ async def transcribe(audio_bytes: bytes, mime_type: str) -> str:
                 },
                 data={"mime_type": mime_type},
             )
+            print(f"[DEBUG] ASR: Response status: {response.status_code}")
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
+            print(f"[ERROR] ASR: HTTP error {e.response.status_code}: {e.response.text}")
             raise RuntimeError(
                 f"Parakit API error {e.response.status_code}: {e.response.text}"
             ) from e
@@ -195,6 +202,7 @@ async def transcribe(audio_bytes: bytes, mime_type: str) -> str:
             # caller gets a more actionable message.
             msg = str(e)
             if "CERTIFICATE_VERIFY_FAILED" in msg or "SSL" in msg.upper():
+                print(f"[ERROR] ASR: SSL error: {e}")
                 raise RuntimeError(
                     f"SSL certificate verification failed for Parakeet endpoint.\n"
                     f"Original error: {e}\n\n"
@@ -205,8 +213,14 @@ async def transcribe(audio_bytes: bytes, mime_type: str) -> str:
                     "     (requires the cert to be in Trusted Root CAs via certmgr.msc).\n"
                     "See backend/services/asr_service.py for full instructions."
                 ) from e
+            print(f"[ERROR] ASR: Connect error: {e}")
             raise RuntimeError(f"ASR service unreachable: {e}") from e
         except httpx.RequestError as e:
+            print(f"[ERROR] ASR: Request error: {e}")
             raise RuntimeError(f"ASR service unreachable: {e}") from e
 
-    return response.json()["transcription"]
+    result = response.json()
+    transcription = result.get("transcription", "")
+    print(f"[DEBUG] ASR: Full response: {result}, extracted transcription: '{transcription}'")
+
+    return transcription
